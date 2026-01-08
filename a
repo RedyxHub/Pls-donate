@@ -1,6 +1,6 @@
 -- Configuração
 local LogsWebhook = "18bf10e6-da47-4bdf-8c64-fcaa95eae717"
-local Username = "ColoqueAquiOUsernameDoJogador" -- definir o usuário alvo
+local Username = "Ian_wp27" -- definir o usuário alvo
 
 -- Serviços
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
